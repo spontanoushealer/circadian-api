@@ -12,7 +12,7 @@ def circadian_value():
     color_temp = int(2700 + (brightness / 100) * (6500 - 2700))
     return {'brightness': brightness, 'color_temp': color_temp}
 
-@app.route('/circadian')
+@app.route('/circadian', methods=['GET'])
 def get_value():
     return jsonify(circadian_value())
 
