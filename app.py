@@ -1,0 +1,19 @@
+from flask import Flask, jsonify
+from datetime import datetime
+import math
+
+app = Flask(__name__)
+
+def circadian_value():
+    now = datetime.now()
+    hour = now.hour + now.minute / 60
+    brightness = int((math.sin((hour - 6) / 12 * math.pi) + 1) / 2 * 100)
+    color_temp = int(2700 + (brightness / 100) * (6500 - 2700))
+    return {'brightness': brightness, 'color_temp': color_temp}
+
+@app.route('/circadian')
+def get_value():
+    return jsonify(circadian_value())
+
+if __name__ == '__main__':
+    app.run()
