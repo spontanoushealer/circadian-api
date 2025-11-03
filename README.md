@@ -1,2 +1,3 @@
 # circadian-api
-REST API for lysstyrke og fargetemperatur basert på tid på dagen
+RESP API for hue and saturization. Based on norwegian timezonecurl 
+https://circadian-api.onrender.com/circadian
