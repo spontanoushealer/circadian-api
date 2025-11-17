@@ -45,7 +45,7 @@ def get_value():
         return int(r), int(g), int(b)
 
     r, g, b = kelvin_to_rgb(kelvin)
-    hex_color = "#{:02X}{:02X}{:02X}".format(r, g, b)
+    hex_color = "{:02X}{:02X}{:02X}".format(r, g, b)
 
     return jsonify({
         'brightness': brightness,
