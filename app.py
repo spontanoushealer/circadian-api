@@ -1,40 +1,37 @@
-from flask import Flask, jsonify
+from flask import Flask, request, jsonify
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import math
-import os
+import colorsys
+from astral import LocationInfo
 
 app = Flask(__name__)
 
-@app.route('/circadian', methods=['GET'])
-def get_value():
-    now = datetime.now(ZoneInfo("Europe/Oslo"))
-    hour = now.hour + now.minute / 60
+class CircadianLighting:
+    def __init__(self, min_temp=2700, max_temp=6500, min_brightness=1, max_brightness=254):
+        self.min_temp = min_temp
+        self.max_temp = max_temp
+        self.min_brightness = min_brightness
+        self.max_brightness = max_brightness
 
-    # Lysstyrke for Hue (0–254)
-    brightness = int((math.sin((hour - 6) / 12 * math.pi) + 1) / 2 * 254)
+    def calculate(self, elevation):
+        ratio = max(0, min((elevation + 6) / 96, 1))
+        brightness = self.min_brightness + ratio * (self.max_brightness - self.min_brightness)
+        kelvin = self.min_temp + ratio * (self.max_temp - self.min_temp)
+        return round(brightness), round(kelvin)
 
-    # Kelvin (2700–6500), deretter konvertert til mired (153–500)
-    kelvin = int(2700 + (brightness / 254) * (6500 - 2700))
-    mired = int(1000000 / kelvin)
-    mired = max(153, min(mired, 500))  # Begrens til Hue-området
-
-        # Konverter Kelvin til RGB (forenklet formel)
-    def kelvin_to_rgb(temp_k):
+    def kelvin_to_rgb(self, temp_k):
         temp = temp_k / 100
-        # Rød
         if temp <= 66:
             r = 255
         else:
             r = 329.698727446 * ((temp - 60) ** -0.1332047592)
             r = max(0, min(r, 255))
-        # Grønn
         if temp <= 66:
             g = 99.4708025861 * math.log(temp) - 161.1195681661
         else:
             g = 288.1221695283 * ((temp - 60) ** -0.0755148492)
         g = max(0, min(g, 255))
-        # Blå
         if temp >= 66:
             b = 255
         elif temp <= 19:
@@ -44,27 +41,54 @@ def get_value():
         b = max(0, min(b, 255))
         return int(r), int(g), int(b)
 
-    r, g, b = kelvin_to_rgb(kelvin)
+    def rgb_to_hsv(self, r, g, b):
+        h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+        return {
+            'hue': round(h * 360, 2),
+            'saturation': round(s * 100, 2),
+            'value': round(v * 100, 2)
+        }
 
-   # Konverter RGB til HSV (H: 0–360, S og V: 0–100)
-    h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
-    hsv = {
-        'hue': round(h * 360, 2),
-        'saturation': round(s * 100, 2),
-        'value': round(v * 100, 2)
-    }
+    def hsv_to_hue_format(self, hsv, brightness):
+        hue_value = int((hsv['hue'] / 360) * 65535)
+        sat_value = int((hsv['saturation'] / 100) * 254)
+        bri_value = int(brightness)
+        return {
+            'hue': hue_value,
+            'sat': sat_value,
+            'bri': bri_value
+        }
+
+def get_solar_elevation(latitude, longitude, tz="Europe/Oslo"):
+    city = LocationInfo(latitude=latitude, longitude=longitude)
+    now = datetime.now(ZoneInfo(tz))
+    return city.solar_elevation(now)
+
+@app.route('/circadian', methods=['GET'])
+def circadian():
+    latitude = request.args.get('latitude', default=59.6689, type=float)
+    longitude = request.args.get('longitude', default=9.6502, type=float)
+    tz = request.args.get('tz', default="Europe/Oslo", type=str)
+
+    elevation = get_solar_elevation(latitude, longitude, tz)
+    circadian = CircadianLighting()
+    brightness, kelvin = circadian.calculate(elevation)
+    r, g, b = circadian.kelvin_to_rgb(kelvin)
+    hsv = circadian.rgb_to_hsv(r, g, b)
+    hue_format = circadian.hsv_to_hue_format(hsv, brightness)
 
     return jsonify({
-        'brightness': brightness,
-        'color_temp_mired': mired,
+        'solhoyde': round(elevation, 2),
+        'lysstyrke': brightness,
         'kelvin': kelvin,
-        'hsv': hsv,
-        'local_time': now.strftime("%Y-%m-%d %H:%M:%S")
+        'rgb': {'r': r, 'g': g, 'b': b},
+        'hue': hsv['hue'],
+        'saturation': hsv['saturation'],
+        'value': hsv['value'],
+        'hue_format': hue_format,
+        'local_time': datetime.now(ZoneInfo(tz)).strftime("%Y-%m-%d %H:%M:%S"),
+        'timezone': tz
     })
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
-
-
-
+    app.run(host='0.0.0.0', port=5000)
