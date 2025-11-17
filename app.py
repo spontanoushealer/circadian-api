@@ -4,6 +4,9 @@ from zoneinfo import ZoneInfo
 import math
 import colorsys
 from astral import LocationInfo
+from astral.sun import elevation
+from astral.location import Observer
+
 
 app = Flask(__name__)
 
@@ -51,10 +54,12 @@ class CircadianLighting:
             'value': round(v * 100, 2)
         }
 
+
 def get_solar_elevation(latitude, longitude, tz):
-    city = LocationInfo(latitude=latitude, longitude=longitude)
     now = datetime.now(ZoneInfo(tz))
-    return city.solar_elevation(now)
+    observer = Observer(latitude=latitude, longitude=longitude)
+    return elevation(observer, now)
+
 
 @app.route('/circadian', methods=['GET'])
 def circadian():
@@ -82,3 +87,4 @@ if __name__ == '__main__':
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
