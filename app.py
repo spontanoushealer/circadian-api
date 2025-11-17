@@ -45,13 +45,20 @@ def get_value():
         return int(r), int(g), int(b)
 
     r, g, b = kelvin_to_rgb(kelvin)
-    hex_color = "{:02X}{:02X}{:02X}".format(r, g, b)
+
+   # Konverter RGB til HSV (H: 0–360, S og V: 0–100)
+    h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+    hsv = {
+        'hue': round(h * 360, 2),
+        'saturation': round(s * 100, 2),
+        'value': round(v * 100, 2)
+    }
 
     return jsonify({
         'brightness': brightness,
         'color_temp_mired': mired,
         'kelvin': kelvin,
-        'hex_color': hex_color,
+        'hsv': hsv,
         'local_time': now.strftime("%Y-%m-%d %H:%M:%S")
     })
 
