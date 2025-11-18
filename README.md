@@ -1,6 +1,8 @@
 # circadian-api
 Implementing an easy to use circadian color values for homey bridge. 
 
+**Work in progress** :-)
+
 Values for hue, saturation and value can be used directly in homey flows. 
 Inputs latitude, longitude and timezone (in IANA format) 
 
