@@ -5,11 +5,12 @@ from flask import Flask, request, jsonify
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from astral.location import Location
+import os
 
 app = Flask(__name__)
 
 # Konfigurasjon
-MIN_K = 2500
+MIN_K = 2000
 MAX_K = 6500
 MIN_DEG = -6.0
 MAX_DEG = 90.0
@@ -37,6 +38,13 @@ def kelvin_from_elev(elev: float) -> int:
     pct = max(0.0, min(1.0, pct))
     return int(round(MIN_K + pct * (MAX_K - MIN_K)))
 
+def kelvin_to_hue(kelvin: int) -> float:
+    # Homey hue: 0 (rød) til 1 (blå). Vi mappe Kelvin til hue:
+    # 2000K (varmt) -> hue nær 0.1, 6500K (kaldt) -> hue nær 0.7
+    min_hue, max_hue = 0.1, 0.7
+    pct = (kelvin - MIN_K) / (MAX_K - MIN_K)
+    return round(min_hue + pct * (max_hue - min_hue), 3)
+
 @app.route("/kelvin", methods=["GET"])
 def get_kelvin():
     try:
@@ -48,18 +56,24 @@ def get_kelvin():
         dt_local = parse_dt(dt, tz)
         elev = solar_elev(dt_local, lat, lon)
         kelvin = kelvin_from_elev(elev)
+        hue = kelvin_to_hue(kelvin)
+
+        hsv = {
+            "hue": hue,
+            "saturation": 0.0,  # hvitt lys
+            "value": 1.0        # full lysstyrke
+        }
 
         return jsonify({
             "kelvin": kelvin,
             "elevation": round(elev, 3),
             "datetime": dt_local.isoformat(),
-            "location": f"{lat},{lon}"
+            "location": f"{lat},{lon}",
+            "hsv": hsv
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
 if __name__ == "__main__":
-    # Render bruker PORT fra miljøvariabel
-    import os
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
