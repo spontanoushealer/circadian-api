@@ -1,95 +1,83 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 from flask import Flask, request, jsonify
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
-from astral.location import Location
-import colorsys
-import os
+from astral import LocationInfo
+from astral.sun import sun
+from datetime import datetime
+import pytz
 
 app = Flask(__name__)
 
-# Konfigurasjon
-MIN_K = 2000
-MAX_K = 6500
-MIN_DEG = -6.0
-MAX_DEG = 90.0
+# Helper: Calculate Kelvin based on solar elevation
+def calculate_kelvin(elevation):
+    """
+    Calculate colour temperature (Kelvin) based on solar elevation.
+    Inspired by Circadian Lighting logic.
+    Elevation is clamped between -6° and 90°.
+    """
+    elevation = max(min(elevation, 90), -6)
+    min_kelvin = 2000
+    max_kelvin = 6500
+    kelvin = min_kelvin + ((elevation + 6) / (90 + 6)) * (max_kelvin - min_kelvin)
+    return round(kelvin)
 
-def parse_dt(dt_text: str | None, tz_name: str) -> datetime:
-    tz = ZoneInfo(tz_name)
-    if not dt_text:
-        return datetime.now(tz)
-    if dt_text.endswith("Z"):
-        dt = datetime.fromisoformat(dt_text[:-1]).replace(tzinfo=timezone.utc)
-    else:
-        dt = datetime.fromisoformat(dt_text)
-    return dt.astimezone(tz)
+# Helper: Convert Kelvin to Homey-compatible HSV
+def kelvin_to_homey_hsv(kelvin):
+    """
+    Convert Kelvin to Homey-compatible HSV values.
+    Homey expects:
+      - Hue: 0.0 to 1.0
+      - Saturation: 0.0 to 1.0
+      - Value (brightness): 0.0 to 1.0
+    """
+    # Map Kelvin to Hue (warm = ~0.05, cool = ~0.66)
+    hue_deg = 240 - ((kelvin - 2000) / (6500 - 2000)) * 240
+    hue = hue_deg / 360.0  # normalise to 0.0 - 1.0
+    saturation = 0.7       # fixed saturation for simplicity
+    value = 1.0            # full brightness
+    return round(hue, 3), saturation, value
 
-def solar_elev(dt_local: datetime, lat: float, lon: float) -> float:
-    loc = Location()
-    loc.latitude = lat
-    loc.longitude = lon
-    loc.name = "Site"
-    loc.region = "NO"
-    return float(loc.solar_elevation(dt_local))
+@app.route('/solar', methods=['GET'])
+def solar_info():
+    """
+    REST endpoint to calculate solar position and colour values.
+    Input: latitude, longitude, timezone as query parameters
+    Output: JSON with azimuth, elevation, Kelvin, Hue, Saturation, Value
+    """
+    latitude = request.args.get('latitude', type=float)
+    longitude = request.args.get('longitude', type=float)
+    timezone = request.args.get('timezone')
 
-def kelvin_from_elev(elev: float) -> int:
-    pct = 0.0 if MAX_DEG == MIN_DEG else (elev - MIN_DEG) / (MAX_DEG - MIN_DEG)
-    pct = max(0.0, min(1.0, pct))
-    return int(round(MIN_K + pct * (MAX_K - MIN_K)))
+    # Validate input
+    if latitude is None or longitude is None or timezone is None:
+        return jsonify({"error": "Missing latitude, longitude or timezone"}), 400
 
-def kelvin_to_rgb(kelvin: int) -> tuple:
-    # Enkel konvertering fra Kelvin til RGB (tilnærming)
-    temp = kelvin / 100.0
-    # Rød
-    if temp <= 66:
-        r = 255
-    else:
-        r = 329.698727446 * ((temp - 60) ** -0.1332047592)
-        r = max(0, min(255, r))
-    # Grønn
-    if temp <= 66:
-        g = 99.4708025861 * (temp) - 161.1195681661
-        g = max(0, min(255, g))
-    else:
-        g = 288.1221695283 * ((temp - 60) ** -0.0755148492)
-        g = max(0, min(255, g))
-    # Blå
-    if temp >= 66:
-        b = 255
-    elif temp <= 19:
-        b = 0
-    else:
-        b = 138.5177312231 * (temp - 10) ** -0.0546820456
-        b = max(0, min(255, b))
-    return (r / 255.0, g / 255.0, b / 255.0)
-
-@app.route("/kelvin", methods=["GET"])
-def get_kelvin():
     try:
-        lat = float(request.args.get("lat"))
-        lon = float(request.args.get("lon"))
-        tz = request.args.get("tz", "Europe/Oslo")
-        dt = request.args.get("dt", None)
+        tz = pytz.timezone(timezone)
+    except pytz.UnknownTimeZoneError:
+        return jsonify({"error": "Invalid timezone"}), 400
 
-        dt_local = parse_dt(dt, tz)
-        elev = solar_elev(dt_local, lat, lon)
-        kelvin = kelvin_from_elev(elev)
+    # Current time in given timezone
+    now = datetime.now(tz)
 
-        # Konverter Kelvin til RGB og deretter til HSV (0–1)
-        r, g, b = kelvin_to_rgb(kelvin)
-        h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    # Create location and calculate sun position
+    location = LocationInfo(latitude=latitude, longitude=longitude)
+    s = sun(location.observer, date=now, tzinfo=tz)
 
-        return jsonify({
-            "kelvin": kelvin,
-            "elevation": round(elev, 3),
-            "datetime": dt_local.isoformat(),
-            "location": f"{lat},{lon}",
-            "hsv": {"h": round(h, 3), "s": round(s, 3), "v": round(v, 3)}
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    # Calculate azimuth and elevation
+    azimuth = location.solar_azimuth(now)
+    elevation = location.solar_elevation(now)
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
+    # Calculate Kelvin and Homey HSV
+    kelvin = calculate_kelvin(elevation)
+    hue, saturation, value = kelvin_to_homey_hsv(kelvin)
+
+    return jsonify({
+        "azimuth": round(azimuth, 2),
+        "elevation": round(elevation, 2),
+        "kelvin": kelvin,
+        "hue": hue,
+        "saturation": saturation,
+        "value": value
+    })
+
+if __name__ == '__main__':
+    app.run(debug=True)
