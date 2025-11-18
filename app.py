@@ -1,8 +1,7 @@
 import os
 from flask import Flask, request, jsonify
-from astral import LocationInfo
-from astral.sun import sun
 from astral import Observer
+from astral.sun import position
 from datetime import datetime
 import pytz
 
@@ -10,6 +9,10 @@ app = Flask(__name__)
 
 # Helper: Calculate Kelvin based on solar elevation
 def calculate_kelvin(elevation):
+    """
+    Calculate colour temperature (Kelvin) based on solar elevation.
+    Elevation is clamped between -6° and 90°.
+    """
     elevation = max(min(elevation, 90), -6)
     min_kelvin = 2000
     max_kelvin = 6500
@@ -18,6 +21,10 @@ def calculate_kelvin(elevation):
 
 # Helper: Convert Kelvin to Homey-compatible HSV
 def kelvin_to_homey_hsv(kelvin):
+    """
+    Convert Kelvin to Homey-compatible HSV values.
+    Hue: 0.0 - 1.0, Saturation: 0.0 - 1.0, Value: 0.0 - 1.0
+    """
     hue_deg = 240 - ((kelvin - 2000) / (6500 - 2000)) * 240
     hue = hue_deg / 360.0
     saturation = 0.7
@@ -26,6 +33,11 @@ def kelvin_to_homey_hsv(kelvin):
 
 @app.route('/solar', methods=['GET'])
 def solar_info():
+    """
+    REST endpoint to calculate solar position and colour values.
+    Input: latitude, longitude, timezone as query parameters
+    Output: JSON with azimuth, elevation, Kelvin, Hue, Saturation, Value
+    """
     latitude = request.args.get('latitude', type=float)
     longitude = request.args.get('longitude', type=float)
     timezone = request.args.get('timezone')
@@ -39,11 +51,12 @@ def solar_info():
         return jsonify({"error": "Invalid timezone"}), 400
 
     now = datetime.now(tz)
-
-    # Use Observer for calculations
     observer = Observer(latitude=latitude, longitude=longitude)
-    azimuth = observer.azimuth(now)
-    elevation = observer.elevation(now)
+
+    # Get solar position using Astral's position() function
+    solar_pos = position(observer, now)
+    azimuth = solar_pos.azimuth
+    elevation = solar_pos.elevation
 
     kelvin = calculate_kelvin(elevation)
     hue, saturation, value = kelvin_to_homey_hsv(kelvin)
