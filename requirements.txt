@@ -1,2 +1,2 @@
-Flask==2.3.2
-astral
+flask==3.0.3
+astral==2.2
