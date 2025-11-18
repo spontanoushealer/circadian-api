@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from astral.location import Location
+import colorsys
 import os
 
 app = Flask(__name__)
@@ -38,12 +39,31 @@ def kelvin_from_elev(elev: float) -> int:
     pct = max(0.0, min(1.0, pct))
     return int(round(MIN_K + pct * (MAX_K - MIN_K)))
 
-def kelvin_to_hue(kelvin: int) -> float:
-    # Homey hue: 0 (rød) til 1 (blå). Vi mappe Kelvin til hue:
-    # 2000K (varmt) -> hue nær 0.1, 6500K (kaldt) -> hue nær 0.7
-    min_hue, max_hue = 0.1, 0.7
-    pct = (kelvin - MIN_K) / (MAX_K - MIN_K)
-    return round(min_hue + pct * (max_hue - min_hue), 3)
+def kelvin_to_rgb(kelvin: int) -> tuple:
+    # Enkel konvertering fra Kelvin til RGB (tilnærming)
+    temp = kelvin / 100.0
+    # Rød
+    if temp <= 66:
+        r = 255
+    else:
+        r = 329.698727446 * ((temp - 60) ** -0.1332047592)
+        r = max(0, min(255, r))
+    # Grønn
+    if temp <= 66:
+        g = 99.4708025861 * (temp) - 161.1195681661
+        g = max(0, min(255, g))
+    else:
+        g = 288.1221695283 * ((temp - 60) ** -0.0755148492)
+        g = max(0, min(255, g))
+    # Blå
+    if temp >= 66:
+        b = 255
+    elif temp <= 19:
+        b = 0
+    else:
+        b = 138.5177312231 * (temp - 10) ** -0.0546820456
+        b = max(0, min(255, b))
+    return (r / 255.0, g / 255.0, b / 255.0)
 
 @app.route("/kelvin", methods=["GET"])
 def get_kelvin():
@@ -56,24 +76,20 @@ def get_kelvin():
         dt_local = parse_dt(dt, tz)
         elev = solar_elev(dt_local, lat, lon)
         kelvin = kelvin_from_elev(elev)
-        hue = kelvin_to_hue(kelvin)
 
-        hsv = {
-            "hue": hue,
-            "saturation": 0.0,  # hvitt lys
-            "value": 1.0        # full lysstyrke
-        }
+        # Konverter Kelvin til RGB og deretter til HSV (0–1)
+        r, g, b = kelvin_to_rgb(kelvin)
+        h, s, v = colorsys.rgb_to_hsv(r, g, b)
 
         return jsonify({
             "kelvin": kelvin,
             "elevation": round(elev, 3),
             "datetime": dt_local.isoformat(),
             "location": f"{lat},{lon}",
-            "hsv": hsv
+            "hsv": {"h": round(h, 3), "s": round(s, 3), "v": round(v, 3)}
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    app.run(host="0.0.0.0", port=port)
