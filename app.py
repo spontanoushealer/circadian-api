@@ -1,22 +1,22 @@
 import os
 from flask import Flask, request, jsonify
 from astral import Observer
-from astral.sun import position
+from astral.sun import azimuth, elevation
 from datetime import datetime
 import pytz
 
 app = Flask(__name__)
 
 # Helper: Calculate Kelvin based on solar elevation
-def calculate_kelvin(elevation):
+def calculate_kelvin(elevation_angle):
     """
     Calculate colour temperature (Kelvin) based on solar elevation.
     Elevation is clamped between -6° and 90°.
     """
-    elevation = max(min(elevation, 90), -6)
+    elevation_angle = max(min(elevation_angle, 90), -6)
     min_kelvin = 2000
     max_kelvin = 6500
-    kelvin = min_kelvin + ((elevation + 6) / (90 + 6)) * (max_kelvin - min_kelvin)
+    kelvin = min_kelvin + ((elevation_angle + 6) / (90 + 6)) * (max_kelvin - min_kelvin)
     return round(kelvin)
 
 # Helper: Convert Kelvin to Homey-compatible HSV
@@ -34,7 +34,7 @@ def kelvin_to_homey_hsv(kelvin):
 @app.route('/solar', methods=['GET'])
 def solar_info():
     """
-    REST endpoint to calculate colour values based on solar position.
+    REST endpoint to calculate colour values based on solar elevation.
     Input: latitude, longitude, timezone as query parameters
     Output: JSON with Kelvin, Hue, Saturation, Value
     """
@@ -53,11 +53,10 @@ def solar_info():
     now = datetime.now(tz)
     observer = Observer(latitude=latitude, longitude=longitude)
 
-    # Get solar position to determine elevation
-    solar_pos = position(observer, now)
-    elevation = solar_pos.elevation
+    # Get solar elevation using Astral 3.2 functions
+    elevation_angle = elevation(observer, now)
 
-    kelvin = calculate_kelvin(elevation)
+    kelvin = calculate_kelvin(elevation_angle)
     hue, saturation, value = kelvin_to_homey_hsv(kelvin)
 
     return jsonify({
