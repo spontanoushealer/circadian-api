@@ -34,9 +34,9 @@ def kelvin_to_homey_hsv(kelvin):
 @app.route('/solar', methods=['GET'])
 def solar_info():
     """
-    REST endpoint to calculate solar position and colour values.
+    REST endpoint to calculate colour values based on solar position.
     Input: latitude, longitude, timezone as query parameters
-    Output: JSON with azimuth, elevation, Kelvin, Hue, Saturation, Value
+    Output: JSON with Kelvin, Hue, Saturation, Value
     """
     latitude = request.args.get('latitude', type=float)
     longitude = request.args.get('longitude', type=float)
@@ -53,17 +53,14 @@ def solar_info():
     now = datetime.now(tz)
     observer = Observer(latitude=latitude, longitude=longitude)
 
-    # Get solar position using Astral's position() function
+    # Get solar position to determine elevation
     solar_pos = position(observer, now)
-    azimuth = solar_pos.azimuth
     elevation = solar_pos.elevation
 
     kelvin = calculate_kelvin(elevation)
     hue, saturation, value = kelvin_to_homey_hsv(kelvin)
 
     return jsonify({
-        "azimuth": round(azimuth, 2),
-        "elevation": round(elevation, 2),
         "kelvin": kelvin,
         "hue": hue,
         "saturation": saturation,
