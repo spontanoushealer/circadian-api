@@ -1,71 +1,79 @@
-import os
 from flask import Flask, request, jsonify
 from astral import Observer
-from astral.sun import azimuth, elevation
+from astral.sun import zenith
 from datetime import datetime
 import pytz
+import colorsys
+
+# Constants
+MIN_KELVIN = 2500
+MAX_KELVIN = 6500
 
 app = Flask(__name__)
 
-# Helper: Calculate Kelvin based on solar elevation
-def calculate_kelvin(elevation_angle):
-    """
-    Calculate colour temperature (Kelvin) based on solar elevation.
-    Elevation is clamped between -6° and 90°.
-    """
-    elevation_angle = max(min(elevation_angle, 90), -6)
-    min_kelvin = 2000
-    max_kelvin = 6500
-    kelvin = min_kelvin + ((elevation_angle + 6) / (90 + 6)) * (max_kelvin - min_kelvin)
-    return round(kelvin)
+def calculate_circadian_angle(observer, dt):
+    z = zenith(observer, dt)
+    return (z - 90) * -1
 
-# Helper: Convert Kelvin to Homey-compatible HSV
-def kelvin_to_homey_hsv(kelvin):
-    """
-    Convert Kelvin to Homey-compatible HSV values.
-    Hue: 0.0 - 1.0, Saturation: 0.0 - 1.0, Value: 0.0 - 1.0
-    """
-    hue_deg = 240 - ((kelvin - 2000) / (6500 - 2000)) * 240
-    hue = hue_deg / 360.0
-    saturation = 0.7
-    value = 1.0
-    return round(hue, 3), saturation, value
+def calculate_percent(angle):
+    percent = angle / 180.0
+    return max(0.0, min(1.0, percent))
 
-@app.route('/solar', methods=['GET'])
-def solar_info():
-    """
-    REST endpoint to calculate colour values based on solar elevation.
-    Input: latitude, longitude, timezone as query parameters
-    Output: JSON with Kelvin, Hue, Saturation, Value
-    """
-    latitude = request.args.get('latitude', type=float)
-    longitude = request.args.get('longitude', type=float)
-    timezone = request.args.get('timezone')
+def calculate_kelvin(percent):
+    return round(MIN_KELVIN + (MAX_KELVIN - MIN_KELVIN) * (percent ** 0.5))
 
-    if latitude is None or longitude is None or timezone is None:
-        return jsonify({"error": "Missing latitude, longitude or timezone"}), 400
+def kelvin_to_rgb(kelvin):
+    temp = kelvin / 100.0
+    if temp <= 66:
+        red = 255
+    else:
+        red = 329.698727446 * ((temp - 60) ** -0.1332047592)
+        red = max(0, min(255, red))
+    if temp <= 66:
+        green = 99.4708025861 * (temp ** 0.1332047592)
+    else:
+        green = 288.1221695283 * ((temp - 60) ** -0.0755148492)
+    green = max(0, min(255, green))
+    if temp >= 66:
+        blue = 255
+    elif temp <= 19:
+        blue = 0
+    else:
+        blue = 138.5177312231 * ((temp - 10) ** 0.055)
+    blue = max(0, min(255, blue))
+    return round(red), round(green), round(blue)
 
+def rgb_to_hsv_normalized(r, g, b):
+    r_norm, g_norm, b_norm = r / 255.0, g / 255.0, b / 255.0
+    h, s, v = colorsys.rgb_to_hsv(r_norm, g_norm, b_norm)
+    return round(h, 4), round(s, 4), round(v, 4)
+
+@app.route('/circadian', methods=['GET'])
+def circadian():
     try:
+        latitude = float(request.args.get('latitude'))
+        longitude = float(request.args.get('longitude'))
+        timezone = request.args.get('timezone')
+
         tz = pytz.timezone(timezone)
-    except pytz.UnknownTimeZoneError:
-        return jsonify({"error": "Invalid timezone"}), 400
+        now = datetime.now(tz)
+        observer = Observer(latitude=latitude, longitude=longitude)
 
-    now = datetime.now(tz)
-    observer = Observer(latitude=latitude, longitude=longitude)
+        angle = calculate_circadian_angle(observer, now)
+        percent = calculate_percent(angle)
+        kelvin = calculate_kelvin(percent)
 
-    # Get solar elevation using Astral 3.2 functions
-    elevation_angle = elevation(observer, now)
+        r, g, b = kelvin_to_rgb(kelvin)
+        h, s, v = rgb_to_hsv_normalized(r, g, b)
 
-    kelvin = calculate_kelvin(elevation_angle)
-    hue, saturation, value = kelvin_to_homey_hsv(kelvin)
-
-    return jsonify({
-        "kelvin": kelvin,
-        "hue": hue,
-        "saturation": saturation,
-        "value": value
-    })
+        return jsonify({
+            "kelvin": kelvin,
+            "hue": h,
+            "saturation": s,
+            "value": v
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=5001)
