@@ -1,3 +1,4 @@
+import os
 from flask import Flask, request, jsonify
 from astral import LocationInfo
 from astral.sun import sun
@@ -28,11 +29,10 @@ def kelvin_to_homey_hsv(kelvin):
       - Saturation: 0.0 to 1.0
       - Value (brightness): 0.0 to 1.0
     """
-    # Map Kelvin to Hue (warm = ~0.05, cool = ~0.66)
     hue_deg = 240 - ((kelvin - 2000) / (6500 - 2000)) * 240
-    hue = hue_deg / 360.0  # normalise to 0.0 - 1.0
-    saturation = 0.7       # fixed saturation for simplicity
-    value = 1.0            # full brightness
+    hue = hue_deg / 360.0
+    saturation = 0.7
+    value = 1.0
     return round(hue, 3), saturation, value
 
 @app.route('/solar', methods=['GET'])
@@ -46,7 +46,6 @@ def solar_info():
     longitude = request.args.get('longitude', type=float)
     timezone = request.args.get('timezone')
 
-    # Validate input
     if latitude is None or longitude is None or timezone is None:
         return jsonify({"error": "Missing latitude, longitude or timezone"}), 400
 
@@ -55,18 +54,13 @@ def solar_info():
     except pytz.UnknownTimeZoneError:
         return jsonify({"error": "Invalid timezone"}), 400
 
-    # Current time in given timezone
     now = datetime.now(tz)
-
-    # Create location and calculate sun position
     location = LocationInfo(latitude=latitude, longitude=longitude)
     s = sun(location.observer, date=now, tzinfo=tz)
 
-    # Calculate azimuth and elevation
     azimuth = location.solar_azimuth(now)
     elevation = location.solar_elevation(now)
 
-    # Calculate Kelvin and Homey HSV
     kelvin = calculate_kelvin(elevation)
     hue, saturation, value = kelvin_to_homey_hsv(kelvin)
 
@@ -80,4 +74,5 @@ def solar_info():
     })
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))  # Render sets PORT env var
+    app.run(host='0.0.0.0', port=port)
