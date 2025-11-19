@@ -4,8 +4,12 @@ from astral.sun import zenith
 from datetime import datetime
 import pytz
 import colorsys
+import logging
 
-# Constants
+# Logging for debugging på Render
+logging.basicConfig(level=logging.INFO)
+
+# Konstanter
 MIN_KELVIN = 2500
 MAX_KELVIN = 6500
 
@@ -73,7 +77,9 @@ def circadian():
             "value": v
         })
     except Exception as e:
+        logging.exception("Feil i /circadian-endepunkt")
         return jsonify({"error": str(e)}), 400
 
+# Render krever ikke __main__, men det er greit å beholde for lokal testing
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
