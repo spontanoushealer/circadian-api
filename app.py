@@ -2,18 +2,24 @@ import os
 from flask import Flask, request, jsonify
 from datetime import datetime
 import pytz
-from pysolar.solar import get_altitude
+from astral import LocationInfo
+from astral.sun import sun
 import math
 
 app = Flask(__name__)
 
+# -------------------------------
+# CONSTANTS
+# -------------------------------
 MIN_KELVIN = 2500
 MAX_KELVIN = 5500
 
 # -------------------------------
-# FUNCTIONS (same as before)
+# HELPER FUNCTIONS
 # -------------------------------
+
 def kelvin_to_rgb(kelvin):
+    """Convert a Kelvin color temperature to RGB."""
     temp = kelvin / 100
     if temp <= 66:
         red = 255
@@ -33,6 +39,7 @@ def kelvin_to_rgb(kelvin):
     return int(red), int(green), int(blue)
 
 def rgb_to_hsv(r, g, b):
+    """Convert RGB to HSV (normalized 0-1)."""
     r_, g_, b_ = r / 255, g / 255, b / 255
     mx, mn = max(r_, g_, b_), min(r_, g_, b_)
     diff = mx - mn
@@ -49,20 +56,23 @@ def rgb_to_hsv(r, g, b):
     return h / 360, s, v
 
 def kelvin_from_altitude(altitude):
-    if altitude <= -12:
+    """Estimate Kelvin based on solar altitude."""
+    if altitude <= -12:  # Astronomical night
         return MIN_KELVIN
-    elif altitude >= 10:
+    elif altitude >= 10:  # High sun
         return MAX_KELVIN
-    else:
+    else:  # Linear interpolation
         return MIN_KELVIN + (MAX_KELVIN - MIN_KELVIN) * ((altitude + 12) / 22)
 
 def rgb_to_hex(r, g, b):
+    """Convert RGB to HEX color."""
     return "#{:02X}{:02X}{:02X}".format(r, g, b)
 
 # -------------------------------
 # REST ENDPOINT
 # -------------------------------
-@app.route('/circadian', methods=['GET'])
+
+@app.route('/solarcolor', methods=['GET'])
 def solarcolor():
     try:
         latitude = float(request.args.get('latitude'))
@@ -75,8 +85,13 @@ def solarcolor():
 
     tz = pytz.timezone(timezone_str)
     now = datetime.now(tz)
-    altitude = get_altitude(latitude, longitude, now)
-    kelvin = kelvin_from_altitude(altitude)
+
+    # Use Astral for solar altitude
+    location = LocationInfo("", "", timezone_str, latitude, longitude)
+    solar_altitude = location.solar_elevation(now)
+
+    # Kelvin and RGB
+    kelvin = kelvin_from_altitude(solar_altitude)
     r, g, b = kelvin_to_rgb(kelvin)
     h, s, v = rgb_to_hsv(r, g, b)
     hex_color = rgb_to_hex(r, g, b)
@@ -88,13 +103,13 @@ def solarcolor():
         "value": round(v, 3),
         "rgb": {"r": r, "g": g, "b": b},
         "hex": hex_color,
-        "solar_altitude": round(altitude, 2)
+        "solar_altitude": round(solar_altitude, 2)
     })
 
 # -------------------------------
 # RUN ON RENDER
 # -------------------------------
+
 if __name__ == '__main__':
-    # Render sets the port in the PORT environment variable
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
