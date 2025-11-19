@@ -1,3 +1,4 @@
 Flask==2.3.6
 pytz==2025.7
 pysolar
+astral==3.2
