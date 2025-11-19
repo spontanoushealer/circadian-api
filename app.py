@@ -2,8 +2,8 @@ import os
 from flask import Flask, request, jsonify
 from datetime import datetime
 import pytz
-from astral import LocationInfo
-from astral.sun import sun
+from astral import Observer
+from astral.sun import elevation
 import math
 
 app = Flask(__name__)
@@ -86,9 +86,9 @@ def solarcolor():
     tz = pytz.timezone(timezone_str)
     now = datetime.now(tz)
 
-    # Use Astral for solar altitude
-    location = LocationInfo("", "", timezone_str, latitude, longitude)
-    solar_altitude = location.solar_elevation(now)
+    # Use Astral Observer for solar altitude
+    observer = Observer(latitude=latitude, longitude=longitude, elevation=0)
+    solar_altitude = elevation(observer, now)
 
     # Kelvin and RGB
     kelvin = kelvin_from_altitude(solar_altitude)
