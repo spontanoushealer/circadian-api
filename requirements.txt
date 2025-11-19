@@ -1,4 +1,4 @@
 Flask
-pytz==2025.7
+pytz
 pysolar
 astral==3.2
