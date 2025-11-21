@@ -8,4 +8,4 @@ Inputs latitude, longitude and timezone (in IANA format)
 
 Code inspired by https://github.com/claytonjn/hass-circadian_lighting
 
-**Example**: curl "https://circadian-api.onrender.com/circadian?latitude=69.6689&longitude=19.6500&timezone=Europe/Oslo"
+**Example**: curl "https://circadian-api.onrender.com/solarcolor?latitude=69.6689&longitude=19.6500&timezone=Europe/Oslo"
