@@ -1,5 +1,4 @@
 Flask
 pytz
 pysolar
-astral==3.2
 math
