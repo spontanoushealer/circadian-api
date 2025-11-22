@@ -18,8 +18,8 @@ MAX_KELVIN = 5500
 # HELPER FUNCTIONS
 # -------------------------------
 
-def normalize_kelvin(kelvin, MIN_KELVIN, MAX_KELVIN):
-    return round((kelvin - MIN_KELVIN) / (MAX_KELVIN - MIN_KELVIN), 4)
+def normalize_kelvin(kelvin, min_kelvin=2000, max_kelvin=5500):
+    return round((kelvin - min_kelvin) / (max_kelvin - min_kelvin), 4)
 
 
 def kelvin_to_rgb(kelvin):
