@@ -1,60 +1,117 @@
-
 from flask import Flask, request, jsonify
-from datetime import datetime
-import math
-import pytz
 from pysolar.solar import get_altitude
+from datetime import datetime, timedelta
+import pytz
 
 app = Flask(__name__)
 
-# Kelvin range
+# --- CONSTANTS ---------------------------------------------------------------
 MIN_KELVIN = 2500
 MAX_KELVIN = 5500
 
-def normalize_kelvin_reverse(kelvin, min_k=MIN_KELVIN, max_k=MAX_KELVIN):
-    """
-    Normalise Kelvin to 0–1 with reversed scale.
-    Higher Kelvin -> lower value.
-    """
-    return (max_k - kelvin) / (max_k - min_k)
 
-def calculate_kelvin(elevation):
-    """
-    Calculate Kelvin based on solar elevation using sinus curve.
-    Elevation <= 0 means night -> minimum Kelvin.
-    """
-    if elevation <= 0:
-        return MIN_KELVIN
-    return MIN_KELVIN + (MAX_KELVIN - MIN_KELVIN) * math.sin(math.radians(elevation))
+# --- HELPER FUNCTIONS --------------------------------------------------------
+def clamp(value, min_val, max_val):
+    """Limit a value between min and max."""
+    return max(min_val, min(max_val, value))
 
+
+def solar_kelvin(latitude, longitude, dt):
+    """
+    Compute Kelvin color temperature based on the sun's altitude.
+    Higher sun = cooler white light (5500K).
+    Lower sun = warmer light (2500K).
+    """
+    altitude = get_altitude(latitude, longitude, dt)  # solar altitude in degrees
+
+    # Normalize altitude: -10° -> 0, 60° -> 1
+    norm = (altitude + 10) / 70
+    norm = clamp(norm, 0, 1)
+
+    # Convert normalized solar factor into Kelvin temperature range
+    kelvin = MIN_KELVIN + norm * (MAX_KELVIN - MIN_KELVIN)
+    kelvin = clamp(kelvin, MIN_KELVIN, MAX_KELVIN)
+
+    # Normalized values for Homey (0–1)
+    kelvin_norm = (kelvin - MIN_KELVIN) / (MAX_KELVIN - MIN_KELVIN)
+    kelvin_rev = 1 - kelvin_norm
+
+    return kelvin, kelvin_norm, kelvin_rev
+
+
+def get_solar_times(latitude, longitude, tz):
+    """
+    Compute approximate sunrise and sunset by scanning 24 hours and detecting
+    when the solar altitude crosses 0 degrees.
+    """
+    sunrise = None
+    sunset = None
+
+    dt = datetime.now(pytz.timezone(tz)).replace(hour=0, minute=0, second=0, microsecond=0)
+    prev_alt = get_altitude(latitude, longitude, dt)
+
+    for i in range(1, 1440):  # 1440 minutes in 24 h
+        dt_new = dt + timedelta(minutes=i)
+        alt = get_altitude(latitude, longitude, dt_new)
+
+        if prev_alt < 0 and alt >= 0 and sunrise is None:
+            sunrise = dt_new
+
+        if prev_alt >= 0 and alt < 0 and sunset is None:
+            sunset = dt_new
+
+        prev_alt = alt
+
+    return sunrise, sunset
+
+
+# --- API ENDPOINT ------------------------------------------------------------
 @app.route("/circadian", methods=["GET"])
-def circadian():
+def kelvin_api():
     """
-    API endpoint:
-    Input: latitude, longitude, timezone
-    Output: Kelvin and reversed normalised Kelvin (0–1)
+    API Endpoint:
+    /kelvin?latitude=..&longitude=..&timezone=Europe/Oslo
     """
-    latitude = float(request.args.get("latitude", 59.6689))  # Default: Kongsberg
-    longitude = float(request.args.get("longitude", 9.6502))
-    timezone = request.args.get("timezone", "Europe/Oslo")
+    try:
+        # --- Validate parameters ---
+        lat_raw = request.args.get("latitude")
+        lon_raw = request.args.get("longitude")
+        tz = request.args.get("timezone")
 
-    tz = pytz.timezone(timezone)
-    now = datetime.now(tz)
+        if lat_raw is None or lon_raw is None or tz is None:
+            return jsonify({
+                "error": "Missing parameters. Required: latitude, longitude, timezone",
+                "example": "/kelvin?latitude=59.91&longitude=10.75&timezone=Europe/Oslo"
+            }), 400
 
-    # Calculate solar elevation using PySolar
-    elevation = get_altitude(latitude, longitude, now)
+        # Convert input parameters
+        latitude = float(lat_raw)
+        longitude = float(lon_raw)
 
-    # Calculate Kelvin and normalised value
-    kelvin = calculate_kelvin(elevation)
-    normalized_kelvin = normalize_kelvin_reverse(kelvin)
+        # Compute sunrise and sunset
+        sunrise, sunset = get_solar_times(latitude, longitude, tz)
 
-    return jsonify({
-        "time": now.strftime("%Y-%m-%d %H:%M"),
-        "solar_elevation": round(elevation, 2),
-        "kelvin": round(kelvin, 2),
-        "normalized_kelvin": round(normalized_kelvin, 4)
-    })
+        # Compute current Kelvin
+        now = datetime.now(pytz.timezone(tz))
+        kelvin, norm, rev = solar_kelvin(latitude, longitude, now)
 
+        # Response WITHOUT table
+        return jsonify({
+            "latitude": latitude,
+            "longitude": longitude,
+            "timezone": tz,
+            "sunrise": sunrise.isoformat() if sunrise else None,
+            "sunset": sunset.isoformat() if sunset else None,
+            "current_kelvin": round(kelvin),
+            "normalized_kelvin": round(norm, 4),
+            "reversed_kelvin": round(rev, 4)
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+# --- MAIN SERVER --------------------------------------------------------------
 if __name__ == "__main__":
-    # Local testing
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5001)
+
