@@ -18,8 +18,8 @@ MAX_KELVIN = 5500
 # HELPER FUNCTIONS
 # -------------------------------
 
-def normalize_kelvin(kelvin, min_kelvin=2000, max_kelvin=5500):
-    return round((kelvin - min_kelvin) / (max_kelvin - min_kelvin), 4)
+def normalize_kelvin_reverse(kelvin, min_kelvin=2000, max_kelvin=5500):
+    return round((max_kelvin - kelvin) / (max_kelvin - min_kelvin), 4)
 
 
 def kelvin_to_rgb(kelvin):
@@ -107,7 +107,7 @@ def solarcolor():
         "value": round(v, 3),
         "rgb": {"r": r, "g": g, "b": b},
         "hex": hex_color,
-        "kelvin_normalized": normalize_kelvin(kelvin),
+        "kelvin_normalized": normalize_kelvin_reverse(kelvin),
         "solar_altitude": round(solar_altitude, 2)
     })
 
