@@ -4,8 +4,6 @@ from datetime import datetime
 import math
 import pytz
 from pysolar.solar import get_altitude
-from astral import LocationInfo
-from astral.sun import sun
 
 app = Flask(__name__)
 
@@ -43,24 +41,16 @@ def circadian():
     tz = pytz.timezone(timezone)
     now = datetime.now(tz)
 
-    # Step 1: Calculate sunrise and sunset using Astral
-    city = LocationInfo(latitude=latitude, longitude=longitude, timezone=timezone)
-    s = sun(city.observer, date=now, tzinfo=tz)
-    sunrise = s["sunrise"]
-    sunset = s["sunset"]
+    # Calculate solar elevation using PySolar
+    elevation = get_altitude(latitude, longitude, now)
 
-    # Step 2: Determine Kelvin based on time and solar elevation
-    if now < sunrise or now > sunset:
-        kelvin = MIN_KELVIN  # Night time
-    else:
-        elevation = get_altitude(latitude, longitude, now)
-        kelvin = calculate_kelvin(elevation)
-
+    # Calculate Kelvin and normalised value
+    kelvin = calculate_kelvin(elevation)
     normalized_kelvin = normalize_kelvin_reverse(kelvin)
 
     return jsonify({
-        "sunrise": sunrise.strftime("%Y-%m-%d %H:%M"),
-        "sunset": sunset.strftime("%Y-%m-%d %H:%M"),
+        "time": now.strftime("%Y-%m-%d %H:%M"),
+        "solar_elevation": round(elevation, 2),
         "kelvin": round(kelvin, 2),
         "normalized_kelvin": round(normalized_kelvin, 4)
     })
